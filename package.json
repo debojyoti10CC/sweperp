@@ -9,6 +9,8 @@
   },
   "scripts": {
     "dev": "node server/index.js --dev",
+    "devnet": "node scripts/chain.js",
+    "sepolia": "node scripts/chain.js --sepolia",
     "build": "vite build",
     "start": "node server/index.js",
     "start:live": "node server/index.js --live",
@@ -24,10 +26,18 @@
     "mongodb-memory-server": "^11.3.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "siwe": "3.0.0",
     "ws": "^8.22.2"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.3.0",
+    "hardhat": "3.21.2",
+    "solc": "0.8.38",
     "vite": "^8.3.7"
+  },
+  "overrides": {
+    "solc": {
+      "tmp": "0.2.7"
+    }
   }
 }

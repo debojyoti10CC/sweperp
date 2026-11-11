@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
 import { UPDATE_MS } from '../shared/markets.js';
-import { sessionCookie, walletAuth } from './auth.js';
+import { walletAuth } from './auth.js';
 import { accountView, closePosition, hasTriggered, openPosition, settleTriggered } from './engine.js';
 import { AppError } from './errors.js';
 import { createMarketFeed, resolveMarket, resolveRange } from './market.js';
@@ -16,22 +16,25 @@ const defaultDatabase = 'kimia_lab'; // Keep accounts created during the initial
 
 export async function startApp({
   port = 4173, mode = 'practice', dev = false, mongoUri, database = defaultDatabase,
-  dataPath = resolve(root, '.data', 'mongo'), appOrigin,
+  dataPath = resolve(root, '.data', 'mongo'), appOrigin, ledger,
 } = {}) {
   const store = await openStore({ uri: mongoUri, database, dataPath, mode });
   const market = createMarketFeed(mode, mode === 'practice' ? await store.controls.find().toArray() : []);
-  const auth = walletAuth(store);
+  const accountStore = ledger ?? store;
+  const network = ledger ? { settlement: ledger.network } : {};
+  const auth = walletAuth({ ...store, ensureAccount: accountStore.ensureAccount }, ledger?.network.chainId);
   const app = express();
   const server = createServer(app);
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
   let origins = [];
   let queue = Promise.resolve();
   let ticking = false;
+  let settling;
   let lastLog = 0;
   let vite;
   let timer;
 
-  const marketView = () => ({ mode, quotes: market.snapshot() });
+  const marketView = () => ({ mode, quotes: market.snapshot(), ...network });
 
   function frame(work) {
     const result = queue.then(work);
@@ -39,11 +42,27 @@ export async function startApp({
     return result;
   }
 
+  function reportUpdateFailure(error) {
+    if (Date.now() - lastLog > 15_000) {
+      lastLog = Date.now();
+      console.error('Market update failed:', error.message);
+    }
+  }
+
+  async function settlePositions(quotes) {
+    const candidates = await accountStore.activeAccounts();
+    const triggered = candidates.filter(account => hasTriggered(account.positions, quotes));
+    await Promise.all(triggered.map(account => accountStore.changeAccount(account._id, current => settleTriggered(current, quotes))));
+  }
+
   async function publish() {
     const markets = marketView();
-    const candidates = await store.accounts.find({ 'positions.0': { $exists: true } }, { projection: { positions: 1 } }).toArray();
-    const triggered = candidates.filter(account => hasTriggered(account.positions, markets.quotes));
-    await Promise.all(triggered.map(account => store.changeAccount(account._id, current => settleTriggered(current, markets.quotes))));
+    if (ledger) {
+      // Keep the market stream moving while an automatic exit waits to be mined.
+      if (!settling) settling = settlePositions(markets.quotes).catch(reportUpdateFailure).finally(() => { settling = null; });
+    } else {
+      await settlePositions(markets.quotes);
+    }
 
     const clients = [...sockets.clients].filter(socket => {
       if (socket.expiresAt && +socket.expiresAt <= Date.now()) {
@@ -54,7 +73,7 @@ export async function startApp({
     });
     if (!clients.length) return;
     const ids = [...new Set(clients.map(socket => socket.accountId).filter(Boolean))];
-    const accounts = ids.length ? await store.accounts.find({ _id: { $in: ids } }).toArray() : [];
+    const accounts = ids.length ? await accountStore.getAccounts(ids) : [];
     const views = new Map(accounts.map(account => [account._id, accountView(account, markets.quotes)]));
     for (const socket of clients) {
       const account = views.get(socket.accountId);
@@ -89,7 +108,7 @@ export async function startApp({
 
   app.get('/api/health', async (req, res) => {
     await store.accounts.findOne({}, { projection: { _id: 1 }, maxTimeMS: 1000 });
-    res.json({ ok: true, database: store.storage, mode });
+    res.json({ ok: true, database: store.storage, mode, ...network });
   });
   app.get('/api/markets', (req, res) => res.json(marketView()));
   app.get('/api/markets/:symbol/candles', async (req, res) => {
@@ -99,7 +118,7 @@ export async function startApp({
   });
   app.get('/api/account', async (req, res) => {
     const session = await auth.session(req);
-    const account = session ? await store.accounts.findOne({ _id: session.accountId }) : null;
+    const account = session ? await accountStore.getAccount(session.accountId) : null;
     res.json({ account: accountView(account, market.snapshot()) });
   });
   app.post('/api/auth/challenge', async (req, res) => {
@@ -107,7 +126,7 @@ export async function startApp({
   });
   app.post('/api/auth/verify', async (req, res) => {
     const { token, account } = await auth.verify(req.body ?? {}, req.get('origin'));
-    sessionCookie(res, req.get('origin'), token);
+    auth.cookie(res, req.get('origin'), token);
     res.json({ account: accountView(account, market.snapshot()) });
   });
   app.post('/api/auth/logout', async (req, res) => {
@@ -115,19 +134,19 @@ export async function startApp({
     for (const socket of sockets.clients) {
       if (id && socket.sessionId === id) socket.close(4001, 'Signed out');
     }
-    sessionCookie(res, req.get('origin'));
+    auth.cookie(res, req.get('origin'));
     res.json({ account: null });
   });
   app.post('/api/orders', async (req, res) => {
     const session = await signedIn(req);
     const quotes = market.snapshot();
-    const account = await store.changeAccount(session.accountId, current => openPosition(current, req.body ?? {}, quotes));
+    const account = await accountStore.changeAccount(session.accountId, current => openPosition(current, req.body ?? {}, quotes));
     res.status(201).json({ account: accountView(account, quotes) });
   });
   app.post('/api/positions/:id/close', async (req, res) => {
     const session = await signedIn(req);
     const quotes = market.snapshot();
-    const account = await store.changeAccount(session.accountId, current => closePosition(current, req.params.id, quotes));
+    const account = await accountStore.changeAccount(session.accountId, current => closePosition(current, req.params.id, quotes));
     res.json({ account: accountView(account, quotes) });
   });
   app.post('/api/practice/price', async (req, res) => {
@@ -146,6 +165,14 @@ export async function startApp({
     });
     res.json(marketView());
   });
+  if (ledger) {
+    app.get('/api/chain/transactions/:hash', async (req, res) => {
+      if (!/^0x[0-9a-fA-F]{64}$/.test(req.params.hash)) throw new AppError(400, 'Enter a valid transaction hash.');
+      const receipt = await ledger.receipt(req.params.hash);
+      if (!receipt) throw new AppError(404, 'This transaction has not been recorded by the PerpLab contract.');
+      res.json(receipt);
+    });
+  }
   app.use('/api', (req, res) => res.status(404).json({ error: 'This endpoint does not exist.' }));
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
@@ -199,12 +226,7 @@ export async function startApp({
       frame(async () => {
         market.tick();
         await publish();
-      }).catch(error => {
-        if (Date.now() - lastLog > 15_000) {
-          lastLog = Date.now();
-          console.error('Market update failed:', error.message);
-        }
-      }).finally(() => { ticking = false; });
+      }).catch(reportUpdateFailure).finally(() => { ticking = false; });
     }, UPDATE_MS);
     return {
       url,
@@ -216,6 +238,7 @@ export async function startApp({
         if (vite) await vite.close();
         await new Promise(done => server.close(done));
         await queue;
+        await settling;
         await store.stop();
       },
     };

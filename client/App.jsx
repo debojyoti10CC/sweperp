@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowRight, ArrowUpRight, BookOpen, Check, ChevronDown, CircleHelp,
-  Database, FlaskConical, Layers3, LogOut, ShieldCheck, SlidersHorizontal, TriangleAlert, Wallet, X,
+  Database, FlaskConical, Layers3, LogOut, SlidersHorizontal, TriangleAlert, Wallet, X,
 } from 'lucide-react';
 import { MARKET, STARTING_BALANCE } from '../shared/markets.js';
 import MarketPanel, { FeedStatus } from './MarketPanel.jsx';
@@ -23,7 +23,7 @@ function Brand() {
   </a>;
 }
 
-function Header({ page, account, ready, onWallet }) {
+function Header({ page, account, ready, walletBusy, onWallet, settlement }) {
   return <header className="app-header">
     <div className="header-inner">
       <Brand />
@@ -31,11 +31,11 @@ function Header({ page, account, ready, onWallet }) {
         {NAV.map(item => <a key={item.id} href={'#' + item.id} aria-current={page === item.id ? 'page' : undefined}>{item.title}</a>)}
       </nav>
       <div className="header-actions">
-        <span className="paper-badge"><FlaskConical size={14} aria-hidden="true" /> Paper trading</span>
+        <span className="paper-badge"><FlaskConical size={14} aria-hidden="true" /> {settlement?.label ?? 'Paper trading'}</span>
         <button type="button" className={'button ' + (account ? 'button-outline wallet-connected' : 'button-primary')}
-          onClick={onWallet} disabled={!ready} aria-label={account ? 'Wallet ' + shortAddress(account.address) : 'Connect wallet'}>
+          onClick={onWallet} disabled={!ready || walletBusy} aria-label={account ? 'Wallet ' + shortAddress(account.address) : undefined}>
           <Wallet size={16} aria-hidden="true" />
-          {account ? <>{shortAddress(account.address)} <ChevronDown size={14} aria-hidden="true" /></> : 'Connect wallet'}
+          {account ? <>{shortAddress(account.address)} <ChevronDown size={14} aria-hidden="true" /></> : walletBusy ? 'Connecting…' : 'Connect wallet'}
         </button>
       </div>
     </div>
@@ -77,58 +77,23 @@ function Modal({ title, description, busy, close, children }) {
   </dialog>;
 }
 
-function WalletModal({ account, close, changeSession, notify }) {
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-  const lock = useRef(false);
-  const metaMask = Boolean(window.ethereum?.isMetaMask || window.ethereum?.providers?.some(item => item.isMetaMask));
-  async function run(kind) {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(kind);
-    setError('');
-    try {
-      const result = kind === 'logout' ? await api('/auth/logout', { body: {} }) : await connectWallet(kind);
-      changeSession(result.account);
-      notify(result.account ? 'Wallet connected' : 'Wallet signed out');
-      close();
-    } catch (problem) {
-      setError(problem.code === 4001 || problem.code === 'ACTION_REJECTED'
-        ? 'The signature was cancelled. Choose a wallet to try again.' : problem.message);
-    } finally {
-      lock.current = false;
-      setBusy('');
-    }
-  }
+function WalletModal({ account, busy, error, close, onAction }) {
+  const ActionIcon = account ? LogOut : Wallet;
+  const actionLabel = account ? 'Sign out' : error ? 'Try again' : 'Connect wallet';
+  const busyLabel = account ? 'Signing out…' : 'Connecting…';
   return <Modal title={account ? 'Connected wallet' : 'Connect wallet'}
-    description={account ? 'Your practice account is saved to this address.' : 'Sign a message to unlock your paper trading account.'}
-    busy={Boolean(busy)} close={close}>
-    {account ? <>
-      <div className="wallet-address"><Wallet size={18} aria-hidden="true" /><code>{account.address}</code></div>
-      <button type="button" className="button button-outline modal-full" disabled={Boolean(busy)} onClick={() => run('logout')}>
-        {busy ? <span className="spinner" /> : <LogOut size={16} aria-hidden="true" />} {busy ? 'Signing out…' : 'Sign out'}
-      </button>
-    </> : <>
-      <div className="wallet-choices">
-        <button type="button" className="wallet-option featured" disabled={Boolean(busy)} onClick={() => run('demo')}>
-          <span className="option-icon"><FlaskConical size={20} aria-hidden="true" /></span>
-          <span><strong>{busy === 'demo' ? 'Connecting demo wallet…' : 'Use demo wallet'}</strong><small>Start with {money(STARTING_BALANCE)} in virtual funds.</small></span>
-          {busy === 'demo' ? <span className="spinner" /> : <ArrowRight size={17} aria-hidden="true" />}
-        </button>
-        <button type="button" className="wallet-option" disabled={Boolean(busy) || !metaMask} onClick={() => run('metamask')}>
-          <span className="option-icon"><Wallet size={20} aria-hidden="true" /></span>
-          <span><strong>{busy === 'metamask' ? 'Waiting for MetaMask…' : 'MetaMask'}</strong>
-            <small>{metaMask ? 'Sign with your browser extension.' : 'Extension not detected in this browser.'}</small></span>
-          {busy === 'metamask' ? <span className="spinner" /> : <ArrowRight size={17} aria-hidden="true" />}
-        </button>
-      </div>
-      <p className="modal-note"><ShieldCheck size={15} aria-hidden="true" /> Sign-in does not move funds or require gas.</p>
-    </>}
+    description={account ? 'Your practice account is saved to this address.' : 'Connect to access your virtual funds.'}
+    busy={busy} close={close}>
+    {account && <div className="wallet-address"><Wallet size={18} aria-hidden="true" /><code>{account.address}</code></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
+    <button type="button" className={'button modal-full ' + (account ? 'button-outline' : 'button-primary')} disabled={busy} onClick={onAction}>
+      {busy ? <span className="spinner" /> : <ActionIcon size={16} aria-hidden="true" />}
+      {busy ? busyLabel : actionLabel}
+    </button>
   </Modal>;
 }
 
-function PriceModal({ symbol, quote, account, close, openWallet, setMarkets, notify }) {
+function PriceModal({ symbol, quote, account, close, openWallet, walletBusy, setMarkets, notify }) {
   const [input, setInput] = useState(() => quote?.price?.toFixed(2) ?? MARKET[symbol].practicePrice.toFixed(2));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -149,7 +114,7 @@ function PriceModal({ symbol, quote, account, close, openWallet, setMarkets, not
     }
   }
   const current = quote?.price ?? MARKET[symbol].practicePrice;
-  return <Modal title="Demo tools" description={'Move the ' + symbol + ' practice price to demonstrate profit, stop-loss, or liquidation.'} busy={busy} close={close}>
+  return <Modal title="Demo tools" description={'Move the ' + symbol + ' practice price to demonstrate profit, stop-loss, or liquidation.'} busy={busy || walletBusy} close={close}>
     {account ? <form onSubmit={apply} aria-busy={busy}>
       <div className="price-presets" role="group" aria-label="Practice price presets">
         <button className="button button-outline" type="button" disabled={busy} onClick={() => setInput((current * 0.95).toFixed(2))}>−5%</button>
@@ -167,7 +132,9 @@ function PriceModal({ symbol, quote, account, close, openWallet, setMarkets, not
       <p className="modal-note"><TriangleAlert size={15} aria-hidden="true" /> This changes the shared practice market and can close open positions.</p>
       {error && <p className="inline-error" role="alert">{error}</p>}
       <button type="submit" className="button button-primary modal-full" disabled={busy}>{busy ? <><span className="spinner" /> Applying price…</> : 'Apply practice price'}</button>
-    </form> : <button type="button" className="button button-primary modal-full" onClick={openWallet}><Wallet size={16} aria-hidden="true" /> Connect wallet</button>}
+    </form> : <button type="button" className="button button-primary modal-full" onClick={openWallet} disabled={walletBusy}>
+      <Wallet size={16} aria-hidden="true" /> {walletBusy ? 'Connecting…' : 'Connect wallet'}
+    </button>}
   </Modal>;
 }
 
@@ -205,7 +172,7 @@ function CloseModal({ position, close, mutate, notify }) {
   </Modal>;
 }
 
-function Guide({ mode }) {
+function Guide({ mode, settlement }) {
   return <>
     <PageIntro section="PerpLab guide" title="How paper trading works"
       description="Open a position, watch the numbers move, and see what happens when it closes." />
@@ -214,7 +181,7 @@ function Guide({ mode }) {
         <div className="guide-icon"><BookOpen size={20} aria-hidden="true" /></div>
         <h2>Try a trade in three steps</h2>
         <ol className="guide-steps">
-          <li><strong>Connect a wallet.</strong><p>Choose the demo wallet for a practice account with {money(STARTING_BALANCE)}.</p></li>
+          <li><strong>Connect a wallet.</strong><p>Select Connect wallet to start with {money(STARTING_BALANCE)} in virtual funds.</p></li>
           <li><strong>Place a market order.</strong><p>Pick SOL, BTC, or ETH, choose Long or Short, then enter a quantity and leverage.</p></li>
           <li><strong>Review the result.</strong><p>Check the open position and close it. The fill and realized profit or loss appear in history.</p></li>
         </ol>
@@ -235,7 +202,9 @@ function Guide({ mode }) {
         <div><h2>Where the data comes from</h2>
           <p>{mode === 'live' ? 'Coinbase Exchange supplies spot prices and candles. PerpLab uses them as reference prices for paper positions.'
             : 'The practice feed supplies simulated prices and candles, so the classroom demo can run offline after setup. Demo tools let you test a stop-loss or liquidation without waiting.'}</p>
-          <p>The server validates orders, updates margin, and stores positions and history in MongoDB. Browser updates arrive through one WebSocket connection. All orders are simulated.</p>
+          <p>{settlement ? 'The server validates orders and submits them to a contract on ' + settlement.label + '. Trade history shows the mined transactions.'
+            : 'The server validates orders, updates margin, and stores positions and history in MongoDB. Browser updates arrive through one WebSocket connection.'}</p>
+          {settlement && <p>Settlement contract <code className="contract-address">{settlement.contract}</code></p>}
           <p className="chart-credit">TradingView Lightweight Charts™. Copyright © 2025 <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView, Inc.</a></p>
         </div>
       </section>
@@ -249,9 +218,13 @@ export default function App() {
   const [symbol, setSymbol] = useState('SOL');
   const [dialog, setDialog] = useState(null);
   const [toast, setToast] = useState('');
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [walletError, setWalletError] = useState('');
+  const walletLock = useRef(false);
   const toastTimer = useRef(null);
   const latest = useRef(null);
   const quote = markets.quotes[symbol];
+  const settlement = markets.settlement;
 
   function notify(message) {
     clearTimeout(toastTimer.current);
@@ -274,7 +247,34 @@ export default function App() {
     latest.current = account && { address: account.address, id: event?.id };
   }, [account]);
 
-  const openWallet = () => setDialog({ kind: 'wallet' });
+  async function updateWallet(action) {
+    if (walletLock.current) return;
+    walletLock.current = true;
+    setWalletBusy(true);
+    setWalletError('');
+    try {
+      const result = action === 'connect' ? await connectWallet(settlement) : await api('/auth/logout', { body: {} });
+      changeSession(result.account);
+      setDialog(current => current?.kind === 'wallet' ? null : current);
+      notify(result.account ? 'Wallet connected' : 'Wallet signed out');
+    } catch (problem) {
+      setWalletError(problem.code === 4001 ? 'The wallet request was cancelled. Try again to connect.' : problem.message);
+      setDialog({ kind: 'wallet' });
+    } finally {
+      walletLock.current = false;
+      setWalletBusy(false);
+    }
+  }
+
+  function openWallet() {
+    if (account) {
+      setWalletError('');
+      setDialog({ kind: 'wallet' });
+    } else {
+      void updateWallet('connect');
+    }
+  }
+
   const onClosePosition = id => setDialog({ kind: 'close', id });
   const close = () => setDialog(null);
 
@@ -282,7 +282,7 @@ export default function App() {
     <a className="skip-link" href="#main-content" onClick={event => {
       event.preventDefault(); document.getElementById('main-content').focus();
     }}>Skip to content</a>
-    <Header page={page} account={account} ready={ready} onWallet={openWallet} />
+    <Header page={page} account={account} ready={ready} walletBusy={walletBusy} onWallet={openWallet} settlement={settlement} />
     <main className="page-shell" id="main-content" tabIndex={-1}>
       {bootError && <p className="inline-error" role="alert">{bootError}</p>}
       {page === 'trade' && <>
@@ -299,11 +299,11 @@ export default function App() {
           </div>
           <aside className="order-column" aria-label="Orders and positions">
             <OrderPanel key={symbol} symbol={symbol} quote={quote} account={account} ready={ready} connection={connection}
-              onConnect={openWallet} mutate={mutate} notify={notify} />
+              onConnect={openWallet} walletBusy={walletBusy} mutate={mutate} notify={notify} settlement={settlement} />
             <Positions account={account} onClose={onClosePosition} />
           </aside>
         </div>
-        <HistoryPanel account={account} />
+        <HistoryPanel account={account} settlement={settlement} />
       </>}
       {page === 'portfolio' && <>
         <PageIntro section="Account" title="Portfolio" description="Track your virtual balance, positions, and fills.">
@@ -312,20 +312,23 @@ export default function App() {
         {!account && <section className="panel portfolio-empty">
           <span className="empty-icon"><Wallet size={20} aria-hidden="true" /></span>
           <div><h2>View your practice account</h2><p>Connect a wallet to load your balance and trading history.</p></div>
-          <button type="button" className="button button-primary" disabled={!ready} onClick={openWallet}>Connect wallet</button>
+          <button type="button" className="button button-primary" disabled={!ready || walletBusy} onClick={openWallet}>
+            {walletBusy ? 'Connecting…' : 'Connect wallet'}
+          </button>
         </section>}
         <div className="portfolio-content"><AccountOverview account={account} /><Positions account={account} onClose={onClosePosition} wide />
-          <HistoryPanel account={account} /></div>
+          <HistoryPanel account={account} settlement={settlement} /></div>
       </>}
-      {page === 'guide' && <Guide mode={markets.mode} />}
+      {page === 'guide' && <Guide mode={markets.mode} settlement={settlement} />}
       <footer className="app-footer">
         <div><span className="footer-mark" aria-hidden="true" /> PerpLab <span className="footer-divider" /> College project · Virtual funds only</div>
         <a href="#guide"><CircleHelp size={14} aria-hidden="true" /> How it works</a>
       </footer>
     </main>
-    {dialog?.kind === 'wallet' && <WalletModal account={account} close={close} changeSession={changeSession} notify={notify} />}
+    {dialog?.kind === 'wallet' && <WalletModal account={account} close={close} busy={walletBusy} error={walletError}
+      onAction={() => updateWallet(account ? 'logout' : 'connect')} />}
     {dialog?.kind === 'price' && <PriceModal symbol={symbol} quote={quote} account={account} close={close}
-      openWallet={openWallet} setMarkets={setMarkets} notify={notify} />}
+      openWallet={openWallet} walletBusy={walletBusy} setMarkets={setMarkets} notify={notify} />}
     {dialog?.kind === 'close' && <CloseModal position={account?.positions.find(position => position.id === dialog.id)}
       close={close} mutate={mutate} notify={notify} />}
     <div className="toast-region" role="status" aria-live="polite">

@@ -33,6 +33,9 @@ export async function openStore({ uri, database, dataPath, mode }) {
     ]);
     return {
       accounts, challenges, sessions, controls, storage: local ? 'Local MongoDB' : 'MongoDB',
+      getAccount: id => accounts.findOne({ _id: id }),
+      getAccounts: ids => accounts.find({ _id: { $in: ids } }).toArray(),
+      activeAccounts: () => accounts.find({ 'positions.0': { $exists: true } }, { projection: { positions: 1 } }).toArray(),
       async ensureAccount(address) {
         const id = address.toLowerCase();
         await accounts.updateOne({ _id: id }, { $setOnInsert: {

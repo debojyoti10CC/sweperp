@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { LEVERAGES, MARKET } from '../shared/markets.js';
 import { positionTerms, QUANTITY_SCALE } from '../shared/risk.js';
-import { dateTime, direction, money, number, percent, pnl, tone } from './format.js';
+import { dateTime, direction, money, number, percent, pnl, shortAddress, tone } from './format.js';
 import { Coin } from './MarketPanel.jsx';
 
 function PanelTitle({ icon: Icon, title, children, titleId }) {
@@ -21,7 +21,7 @@ function Empty({ icon: Icon, title, children }) {
   </div>;
 }
 
-export function OrderPanel({ symbol, quote, account, ready, connection, onConnect, mutate, notify }) {
+export function OrderPanel({ symbol, quote, account, ready, connection, onConnect, walletBusy, mutate, notify, settlement }) {
   const [side, setSide] = useState('long');
   const [quantity, setQuantity] = useState('');
   const [leverage, setLeverage] = useState(5);
@@ -133,11 +133,12 @@ export function OrderPanel({ symbol, quote, account, ready, connection, onConnec
       {problem && <p className="inline-error" id="order-error" role="alert">{problem.message}</p>}
       {account && !quoteReady && <p className="inline-note">Orders resume when a current price is available.</p>}
       {account ? <button className={'button button-primary order-action action-' + side} type="submit" disabled={busy || !quoteReady}>
-        {busy ? <><span className="spinner" /> Placing order…</> : <>{action} <ArrowUpRight size={16} aria-hidden="true" /></>}
-      </button> : <button className="button button-primary order-action" type="button" onClick={onConnect} disabled={!ready}>
-        <Wallet size={16} aria-hidden="true" /> {ready ? 'Connect wallet to trade' : 'Checking wallet…'}
+        {busy ? <><span className="spinner" /> {settlement ? 'Confirming transaction…' : 'Placing order…'}</> : <>{action} <ArrowUpRight size={16} aria-hidden="true" /></>}
+      </button> : <button className="button button-primary order-action" type="button" onClick={onConnect} disabled={!ready || walletBusy}>
+        <Wallet size={16} aria-hidden="true" /> {walletBusy ? 'Connecting…' : ready ? 'Connect wallet to trade' : 'Checking wallet…'}
       </button>}
-      <p className="order-disclaimer"><ShieldCheck size={14} aria-hidden="true" /> Orders use virtual funds.</p>
+      <p className="order-disclaimer"><ShieldCheck size={14} aria-hidden="true" /> {settlement
+        ? 'Settles on ' + settlement.label + ' with virtual funds.' : 'Orders use virtual funds.'}</p>
     </form>
   </section>;
 }
@@ -195,7 +196,7 @@ export function AccountOverview({ account }) {
 
 const labels = { opened: 'Opened', closed: 'Closed', stopped: 'Stop-loss', liquidated: 'Liquidated' };
 
-export function HistoryPanel({ account }) {
+export function HistoryPanel({ account, settlement }) {
   const [filter, setFilter] = useState('all');
   const events = account?.events ?? [];
   const rows = events.filter(event => filter === 'all' || (filter === 'opened' ? event.type === 'opened' : event.type !== 'opened'));
@@ -211,7 +212,9 @@ export function HistoryPanel({ account }) {
     {rows.length ? <div className="table-scroll history-scroll" role="region" aria-label="Transaction history table" tabIndex={0}>
       <table>
         <caption className="sr-only">Paper orders and position exits, newest first</caption>
-        <thead><tr>{['Event', 'Market', 'Side', 'Size', 'Fill price', 'Realized P&L', 'Time (UTC)'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+        <thead><tr>{['Event', 'Market', 'Side', 'Size', 'Fill price', 'Realized P&L', 'Time (UTC)'].map(label => <th key={label} scope="col">{label}</th>)}
+          {settlement && <th scope="col">Transaction</th>}
+        </tr></thead>
         <tbody>{rows.map(event => <tr key={event.id}>
           <td><span className={'event-tag ' + event.type}>{labels[event.type]}</span></td>
           <td className="table-market"><Coin symbol={event.symbol} small />{event.symbol}-PERP</td>
@@ -219,6 +222,9 @@ export function HistoryPanel({ account }) {
           <td>{number(event.quantity)} {event.symbol}</td><td>{money(event.price)}</td>
           <td className={tone(event.realizedPnl)}>{pnl(event.realizedPnl)}</td>
           <td><time dateTime={event.time}>{dateTime(event.time)}</time></td>
+          {settlement && <td>{event.txHash ? <a className="tx-link" href={settlement.explorer
+            ? settlement.explorer + '/tx/' + event.txHash : '/api/chain/transactions/' + event.txHash}
+            title={event.txHash} target="_blank" rel="noreferrer">{shortAddress(event.txHash)} <ArrowUpRight size={13} aria-hidden="true" /></a> : '—'}</td>}
         </tr>)}</tbody>
       </table>
     </div> : <Empty icon={Clock3} title={events.length ? 'No matching transactions' : 'No transactions yet'}>

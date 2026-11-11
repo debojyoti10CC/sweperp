@@ -275,7 +275,7 @@ h1 { color: var(--text-primary); font-size: var(--font-3xl); font-weight: var(--
 .inline-note { color: var(--text-warning); background: var(--warning-surface); }
 
 .empty-state { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-5); text-align: start; }
-.empty-icon, .guide-icon, .option-icon {
+.empty-icon, .guide-icon {
   display: inline-grid; place-items: center; width: var(--target-control); height: var(--target-control); flex-shrink: 0;
   border: 1px solid var(--border-strong); border-radius: var(--radius-xs); color: var(--action-fill); background: var(--surface-selected);
 }
@@ -327,6 +327,9 @@ h1 { color: var(--text-primary); font-size: var(--font-3xl); font-weight: var(--
 .table-scroll tr:last-child td { border-bottom: 0; }
 .table-scroll tbody tr:hover { background: var(--surface-raised); }
 .table-market .coin { margin-right: var(--space-2); vertical-align: middle; }
+.tx-link { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--space-7); text-decoration: underline; text-underline-offset: .2em; }
+.tx-link:hover { color: var(--action-hover); }
+.contract-address { overflow-wrap: anywhere; }
 
 .portfolio-empty { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-5); margin-bottom: var(--space-5); }
 .portfolio-empty .button { margin-left: auto; }
@@ -368,19 +371,6 @@ h1 { color: var(--text-primary); font-size: var(--font-3xl); font-weight: var(--
 .dialog-head h2 { font-size: var(--font-2xl); font-weight: var(--weight-strong); }
 .dialog-head p { margin-top: var(--space-1); color: var(--text-secondary); font-size: var(--font-md); line-height: 1.55; }
 .icon-button { min-height: var(--target-control); min-width: var(--target-control); padding: 0; }
-.wallet-choices { display: grid; gap: var(--space-3); }
-.wallet-option {
-  width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3);
-  background: var(--surface-raised); border: 1px solid var(--border-control); border-radius: var(--radius-xs); text-align: start; color: var(--text-primary);
-  transition: background-color var(--motion-instant), border-color var(--motion-instant);
-}
-.wallet-option.featured { background: var(--surface-selected); border-color: var(--action-fill); box-shadow: var(--shadow-1); }
-.wallet-option strong { display: block; font-size: var(--font-md); font-weight: var(--weight-strong); }
-.wallet-option small { display: block; color: var(--text-secondary); font-size: var(--font-sm); line-height: 1.45; overflow-wrap: anywhere; }
-.wallet-option.featured small { color: var(--action-fill); }
-.wallet-option:hover:not(:disabled) { background: var(--surface-muted); border-color: var(--action-fill); }
-.wallet-option:active:not(:disabled) { background: var(--surface-selected); }
-.wallet-option:disabled { color: var(--text-secondary); border-color: var(--border-strong); }
 .modal-note { display: flex; align-items: start; gap: var(--space-2); margin-top: var(--space-3); color: var(--text-secondary); font-size: var(--font-sm); line-height: 1.55; }
 .modal-note svg { margin-top: 2px; color: var(--action-fill); }
 .wallet-address { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); background: var(--surface-raised); border: 1px solid var(--border-strong); border-radius: var(--radius-xs); }
