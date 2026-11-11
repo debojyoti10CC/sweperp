@@ -197,3 +197,11 @@ export function resolveRange(range) {
   if (!Object.hasOwn(RANGE, range)) throw new AppError(400, 'Choose 1H, 1D, 1W, or 1M.');
   return RANGE[range];
 }
+
+export function readPracticePrice(price) {
+  if (typeof price !== 'number' || !Number.isFinite(price) || price < 0.01 || price > 2_000_000 ||
+    Math.abs(price * 100 - Math.round(price * 100)) > 1e-6) {
+    throw new AppError(400, 'Enter a price between $0.01 and $2,000,000 with up to two decimals.');
+  }
+  return price;
+}

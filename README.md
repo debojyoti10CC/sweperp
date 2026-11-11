@@ -15,6 +15,12 @@ Open **http://127.0.0.1:4173**. The first install downloads a local MongoDB bina
 
 For a built copy, run `npm.cmd run build` once, then `npm.cmd start`. Stop the running server with **Ctrl+C**. Reopen the same URL in the same browser to keep the demo wallet and its history.
 
+## Hosted practice on Vercel
+
+Vercel builds the static dashboard with `npm run build:hosted`. Select **Start practice** to use the same order, margin, and exit rules in the browser. The balance, price overrides, and history are scoped to the current tab and survive a reload.
+
+**TradingView** opens the advanced chart for the selected Coinbase spot pair with indicators and drawing tools. **Fill prices** shows the prices used by PerpLab. Applying a price in **Demo tools** switches to that view so you can see how the position responds.
+
 ## Run on a test network
 
 Run `npm.cmd ci` and then `npm.cmd run devnet`. Open the URL printed in the terminal. This starts a fresh local Ethereum devnet, deploys the contract, and opens the same trading dashboard. Connect the demo wallet and place or close a trade. The transaction hash in **Transaction history** opens the mined receipt. The local chain resets each time the server restarts.

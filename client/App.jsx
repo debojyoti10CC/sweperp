@@ -7,10 +7,11 @@ import { MARKET, STARTING_BALANCE } from '../shared/markets.js';
 import MarketPanel, { FeedStatus } from './MarketPanel.jsx';
 import { AccountOverview, HistoryPanel, OrderPanel, Positions } from './Trading.jsx';
 import { direction, money, number, pnl, shortAddress, tone } from './format.js';
-import { api, connectWallet, useTerminal } from './terminal.js';
+import { api, BROWSER_PRACTICE, connectWallet, useTerminal } from './terminal.js';
 
 const NAV = [{ id: 'trade', title: 'Trade' }, { id: 'portfolio', title: 'Portfolio' }, { id: 'guide', title: 'Guide' }];
 const route = () => NAV.find(item => '#' + item.id === location.hash)?.id ?? 'trade';
+const connectLabel = BROWSER_PRACTICE ? 'Start practice' : 'Connect wallet';
 
 function Brand() {
   return <a href="#trade" className="brand" aria-label="PerpLab — Trade">
@@ -24,6 +25,8 @@ function Brand() {
 }
 
 function Header({ page, account, ready, walletBusy, onWallet, settlement }) {
+  const badge = settlement?.label ?? (BROWSER_PRACTICE ? 'Browser practice' : 'Paper trading');
+  const accountLabel = account && (BROWSER_PRACTICE ? 'Practice account' : shortAddress(account.address));
   return <header className="app-header">
     <div className="header-inner">
       <Brand />
@@ -31,11 +34,11 @@ function Header({ page, account, ready, walletBusy, onWallet, settlement }) {
         {NAV.map(item => <a key={item.id} href={'#' + item.id} aria-current={page === item.id ? 'page' : undefined}>{item.title}</a>)}
       </nav>
       <div className="header-actions">
-        <span className="paper-badge"><FlaskConical size={14} aria-hidden="true" /> {settlement?.label ?? 'Paper trading'}</span>
+        <span className="paper-badge"><FlaskConical size={14} aria-hidden="true" /> {badge}</span>
         <button type="button" className={'button ' + (account ? 'button-outline wallet-connected' : 'button-primary')}
-          onClick={onWallet} disabled={!ready || walletBusy} aria-label={account ? 'Wallet ' + shortAddress(account.address) : undefined}>
+          onClick={onWallet} disabled={!ready || walletBusy} aria-label={account && !BROWSER_PRACTICE ? 'Wallet ' + accountLabel : undefined}>
           <Wallet size={16} aria-hidden="true" />
-          {account ? <>{shortAddress(account.address)} <ChevronDown size={14} aria-hidden="true" /></> : walletBusy ? 'Connecting…' : 'Connect wallet'}
+          {account ? <>{accountLabel} <ChevronDown size={14} aria-hidden="true" /></> : walletBusy ? 'Connecting…' : connectLabel}
         </button>
       </div>
     </div>
@@ -79,12 +82,14 @@ function Modal({ title, description, busy, close, children }) {
 
 function WalletModal({ account, busy, error, close, onAction }) {
   const ActionIcon = account ? LogOut : Wallet;
-  const actionLabel = account ? 'Sign out' : error ? 'Try again' : 'Connect wallet';
+  const actionLabel = account ? 'Sign out' : error ? 'Try again' : connectLabel;
   const busyLabel = account ? 'Signing out…' : 'Connecting…';
-  return <Modal title={account ? 'Connected wallet' : 'Connect wallet'}
-    description={account ? 'Your practice account is saved to this address.' : 'Connect to access your virtual funds.'}
+  const title = account ? (BROWSER_PRACTICE ? 'Practice account' : 'Connected wallet') : connectLabel;
+  const description = BROWSER_PRACTICE ? 'Your balance and history are saved in this tab.'
+    : account ? 'Your practice account is saved to this address.' : 'Connect to access your virtual funds.';
+  return <Modal title={title} description={description}
     busy={busy} close={close}>
-    {account && <div className="wallet-address"><Wallet size={18} aria-hidden="true" /><code>{account.address}</code></div>}
+    {account && !BROWSER_PRACTICE && <div className="wallet-address"><Wallet size={18} aria-hidden="true" /><code>{account.address}</code></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
     <button type="button" className={'button modal-full ' + (account ? 'button-outline' : 'button-primary')} disabled={busy} onClick={onAction}>
       {busy ? <span className="spinner" /> : <ActionIcon size={16} aria-hidden="true" />}
@@ -93,7 +98,7 @@ function WalletModal({ account, busy, error, close, onAction }) {
   </Modal>;
 }
 
-function PriceModal({ symbol, quote, account, close, openWallet, walletBusy, setMarkets, notify }) {
+function PriceModal({ symbol, quote, account, close, openWallet, walletBusy, onPriceApplied, notify }) {
   const [input, setInput] = useState(() => quote?.price?.toFixed(2) ?? MARKET[symbol].practicePrice.toFixed(2));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -104,7 +109,7 @@ function PriceModal({ symbol, quote, account, close, openWallet, walletBusy, set
     setError('');
     try {
       const result = await api('/practice/price', { body: { symbol, price: Number(input) } });
-      setMarkets(result);
+      onPriceApplied(result);
       notify(symbol + ' practice price moved to ' + money(Number(input)));
       close();
     } catch (problem) {
@@ -129,11 +134,11 @@ function PriceModal({ symbol, quote, account, close, openWallet, walletBusy, set
           <span className="input-unit" aria-hidden="true">USD</span>
         </div>
       </div>
-      <p className="modal-note"><TriangleAlert size={15} aria-hidden="true" /> This changes the shared practice market and can close open positions.</p>
+      <p className="modal-note"><TriangleAlert size={15} aria-hidden="true" /> This changes {BROWSER_PRACTICE ? 'the practice mark in this tab' : 'the shared practice market'} and can close open positions.</p>
       {error && <p className="inline-error" role="alert">{error}</p>}
       <button type="submit" className="button button-primary modal-full" disabled={busy}>{busy ? <><span className="spinner" /> Applying price…</> : 'Apply practice price'}</button>
     </form> : <button type="button" className="button button-primary modal-full" onClick={openWallet} disabled={walletBusy}>
-      <Wallet size={16} aria-hidden="true" /> {walletBusy ? 'Connecting…' : 'Connect wallet'}
+      <Wallet size={16} aria-hidden="true" /> {walletBusy ? 'Connecting…' : connectLabel}
     </button>}
   </Modal>;
 }
@@ -181,7 +186,7 @@ function Guide({ mode, settlement }) {
         <div className="guide-icon"><BookOpen size={20} aria-hidden="true" /></div>
         <h2>Try a trade in three steps</h2>
         <ol className="guide-steps">
-          <li><strong>Connect a wallet.</strong><p>Select Connect wallet to start with {money(STARTING_BALANCE)} in virtual funds.</p></li>
+          <li><strong>{connectLabel}.</strong><p>Start with {money(STARTING_BALANCE)} in virtual funds.</p></li>
           <li><strong>Place a market order.</strong><p>Pick SOL, BTC, or ETH, choose Long or Short, then enter a quantity and leverage.</p></li>
           <li><strong>Review the result.</strong><p>Check the open position and close it. The fill and realized profit or loss appear in history.</p></li>
         </ol>
@@ -202,8 +207,9 @@ function Guide({ mode, settlement }) {
         <div><h2>Where the data comes from</h2>
           <p>{mode === 'live' ? 'Coinbase Exchange supplies spot prices and candles. PerpLab uses them as reference prices for paper positions.'
             : 'The practice feed supplies simulated prices and candles, so the classroom demo can run offline after setup. Demo tools let you test a stop-loss or liquidation without waiting.'}</p>
-          <p>{settlement ? 'The server validates orders and submits them to a contract on ' + settlement.label + '. Trade history shows the mined transactions.'
-            : 'The server validates orders, updates margin, and stores positions and history in MongoDB. Browser updates arrive through one WebSocket connection.'}</p>
+          {BROWSER_PRACTICE ? <p>Trades and balances are saved in this tab. TradingView shows Coinbase spot prices. Select Fill prices to see the marks used for practice orders.</p>
+            : <p>{settlement ? 'The server validates orders and submits them to a contract on ' + settlement.label + '. Trade history shows the mined transactions.'
+              : 'The server validates orders, updates margin, and stores positions and history in MongoDB. Browser updates arrive through one WebSocket connection.'}</p>}
           {settlement && <p>Settlement contract <code className="contract-address">{settlement.contract}</code></p>}
           <p className="chart-credit">TradingView Lightweight Charts™. Copyright © 2025 <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView, Inc.</a></p>
         </div>
@@ -216,6 +222,7 @@ export default function App() {
   const { markets, setMarkets, account, ready, connection, bootError, changeSession, mutate } = useTerminal();
   const [page, setPage] = useState(route);
   const [symbol, setSymbol] = useState('SOL');
+  const [chartView, setChartView] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [toast, setToast] = useState('');
   const [walletBusy, setWalletBusy] = useState(false);
@@ -256,7 +263,7 @@ export default function App() {
       const result = action === 'connect' ? await connectWallet(settlement) : await api('/auth/logout', { body: {} });
       changeSession(result.account);
       setDialog(current => current?.kind === 'wallet' ? null : current);
-      notify(result.account ? 'Wallet connected' : 'Wallet signed out');
+      notify(result.account ? (BROWSER_PRACTICE ? 'Practice account ready' : 'Wallet connected') : 'Signed out');
     } catch (problem) {
       setWalletError(problem.code === 4001 ? 'The wallet request was cancelled. Try again to connect.' : problem.message);
       setDialog({ kind: 'wallet' });
@@ -294,7 +301,8 @@ export default function App() {
         </PageIntro>
         <div className="terminal-grid">
           <div className="market-column">
-            <MarketPanel symbol={symbol} setSymbol={setSymbol} quote={quote} mode={markets.mode} connection={connection} />
+            <MarketPanel symbol={symbol} setSymbol={setSymbol} quote={quote} mode={markets.mode} connection={connection}
+              chartView={chartView} setChartView={setChartView} />
             <AccountOverview account={account} />
           </div>
           <aside className="order-column" aria-label="Orders and positions">
@@ -311,9 +319,9 @@ export default function App() {
         </PageIntro>
         {!account && <section className="panel portfolio-empty">
           <span className="empty-icon"><Wallet size={20} aria-hidden="true" /></span>
-          <div><h2>View your practice account</h2><p>Connect a wallet to load your balance and trading history.</p></div>
+          <div><h2>View your practice account</h2><p>{connectLabel} to load your balance and trading history.</p></div>
           <button type="button" className="button button-primary" disabled={!ready || walletBusy} onClick={openWallet}>
-            {walletBusy ? 'Connecting…' : 'Connect wallet'}
+            {walletBusy ? 'Connecting…' : connectLabel}
           </button>
         </section>}
         <div className="portfolio-content"><AccountOverview account={account} /><Positions account={account} onClose={onClosePosition} wide />
@@ -321,14 +329,17 @@ export default function App() {
       </>}
       {page === 'guide' && <Guide mode={markets.mode} settlement={settlement} />}
       <footer className="app-footer">
-        <div><span className="footer-mark" aria-hidden="true" /> PerpLab <span className="footer-divider" /> College project · Virtual funds only</div>
+        <div><span className="footer-mark" aria-hidden="true" /> PerpLab <span className="footer-divider" /> Virtual funds only</div>
         <a href="#guide"><CircleHelp size={14} aria-hidden="true" /> How it works</a>
       </footer>
     </main>
     {dialog?.kind === 'wallet' && <WalletModal account={account} close={close} busy={walletBusy} error={walletError}
       onAction={() => updateWallet(account ? 'logout' : 'connect')} />}
     {dialog?.kind === 'price' && <PriceModal symbol={symbol} quote={quote} account={account} close={close}
-      openWallet={openWallet} walletBusy={walletBusy} setMarkets={setMarkets} notify={notify} />}
+      openWallet={openWallet} walletBusy={walletBusy} onPriceApplied={market => {
+        setMarkets(market);
+        setChartView('fills');
+      }} notify={notify} />}
     {dialog?.kind === 'close' && <CloseModal position={account?.positions.find(position => position.id === dialog.id)}
       close={close} mutate={mutate} notify={notify} />}
     <div className="toast-region" role="status" aria-live="polite">

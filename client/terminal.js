@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+export const BROWSER_PRACTICE = import.meta.env.MODE === 'hosted';
+
 export async function api(path, { body, signal, timeout = 9000 } = {}) {
+  if (BROWSER_PRACTICE) {
+    const { practiceRequest } = await import('./browser-practice.js');
+    signal?.throwIfAborted();
+    return practiceRequest(path, body);
+  }
   const response = await fetch('/api' + path, {
     method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
@@ -45,7 +52,8 @@ export function useTerminal() {
       if (marketResult.status === 'fulfilled') setMarkets(marketResult.value);
       if (accountResult.status === 'fulfilled') setAccount(accountResult.value.account);
       if (marketResult.status === 'rejected' || accountResult.status === 'rejected') {
-        setBootError('The local server is taking longer to respond. PerpLab will keep trying.');
+        setBootError(BROWSER_PRACTICE ? 'Browser practice could not start. Reload to try again.'
+          : 'The local server is taking longer to respond. PerpLab will keep trying.');
       }
       setReady(true);
     });
@@ -56,6 +64,27 @@ export function useTerminal() {
     let socket, retry, watchdog;
     let done = false;
     const current = () => !done && epoch.current === sessionEpoch;
+    function receive({ account: next, ...market }) {
+      if (!current()) return;
+      streamed.current = true;
+      setMarkets(market);
+      setAccount(previous => newestAccount(previous, next));
+      setReady(true);
+      setConnection('connected');
+      setBootError('');
+    }
+    if (BROWSER_PRACTICE) {
+      let unsubscribe;
+      import('./browser-practice.js').then(({ subscribePractice }) => {
+        if (current()) unsubscribe = subscribePractice(receive);
+      }).catch(() => {
+        if (current()) setBootError('Browser practice could not start. Reload to try again.');
+      });
+      return () => {
+        done = true;
+        unsubscribe?.();
+      };
+    }
     function connect() {
       if (!current()) return;
       const url = new URL('/ws', location.href);
@@ -65,14 +94,9 @@ export function useTerminal() {
       socket.onmessage = event => {
         if (!current()) return;
         try {
-          const { account: next, ...market } = JSON.parse(event.data);
+          const snapshot = JSON.parse(event.data);
           lastMessage = Date.now();
-          streamed.current = true;
-          setMarkets(market);
-          setAccount(previous => newestAccount(previous, next));
-          setReady(true);
-          setConnection('connected');
-          setBootError('');
+          receive(snapshot);
         } catch { /* wait for the next valid frame */ }
       };
       watchdog = setInterval(() => {
@@ -150,6 +174,10 @@ async function demoWallet() {
 }
 
 export async function connectWallet(settlement) {
+  if (BROWSER_PRACTICE) {
+    const { connectPracticeAccount } = await import('./browser-practice.js');
+    return connectPracticeAccount();
+  }
   const injected = settlement?.explorer ? window.ethereum : null;
   const provider = injected?.providers?.find(wallet => wallet.isMetaMask) ?? injected;
   const { address, sign } = typeof provider?.request === 'function'

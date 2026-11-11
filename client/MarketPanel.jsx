@@ -5,7 +5,8 @@ import {
 import { ArrowDownRight, ArrowUpRight, CandlestickChart, ChevronDown, Clock3, RefreshCw, TriangleAlert } from 'lucide-react';
 import { MARKET, MARKETS, RANGE, RANGES } from '../shared/markets.js';
 import { dateTime, money, number, percent, shortNumber, time, tone } from './format.js';
-import { api } from './terminal.js';
+import { api, BROWSER_PRACTICE } from './terminal.js';
+import TradingViewChart, { tradingViewUrl } from './TradingViewChart.jsx';
 
 export function Coin({ symbol, small = false }) {
   return <span className={'coin coin-' + symbol.toLowerCase() + (small ? ' coin-small' : '')} aria-hidden="true">
@@ -151,8 +152,10 @@ function Chart({ symbol, range, quote }) {
   </>;
 }
 
-export default function MarketPanel({ symbol, setSymbol, quote, mode, connection }) {
+export default function MarketPanel({ symbol, setSymbol, quote, mode, connection, chartView, setChartView }) {
   const [range, setRange] = useState('1D');
+  const selectedChart = chartView ?? (BROWSER_PRACTICE || mode === 'live' ? 'tradingview' : 'fills');
+  const showTradingView = selectedChart === 'tradingview';
   const ChangeIcon = quote?.change < 0 ? ArrowDownRight : ArrowUpRight;
   return <section className="panel market-panel" aria-label="Market">
     <div className="market-summary">
@@ -170,7 +173,7 @@ export default function MarketPanel({ symbol, setSymbol, quote, mode, connection
         </div>
       </div>
       <dl className="market-stats">
-        <div className="stat-mark"><dt>Mark price</dt><dd>{money(quote?.price)}</dd></div>
+        <div className="stat-mark"><dt>{mode === 'practice' ? 'Practice mark' : 'Mark price'}</dt><dd>{money(quote?.price)}</dd></div>
         <div><dt>24h change</dt><dd className={tone(quote?.change)}>
           {quote && <ChangeIcon size={14} aria-hidden="true" />}{percent(quote?.change)}
         </dd></div>
@@ -180,17 +183,25 @@ export default function MarketPanel({ symbol, setSymbol, quote, mode, connection
       </dl>
     </div>
     <div className="chart-toolbar">
-      <div className="chart-title"><CandlestickChart size={16} aria-hidden="true" /><span>Price chart</span></div>
-      <div className="range-options" role="group" aria-label="Chart time range">
-        {RANGES.map(item => <button key={item.id} type="button" aria-pressed={item.id === range} aria-label={item.id + ' (' + item.label + ')'}
-          onClick={() => setRange(item.id)}>{item.id}</button>)}
+      <div className="chart-title"><CandlestickChart size={16} aria-hidden="true" /><span>Market chart</span></div>
+      <div className="chart-controls">
+        <div className="range-options" role="group" aria-label="Chart view">
+          <button type="button" aria-pressed={showTradingView} onClick={() => setChartView('tradingview')}>TradingView</button>
+          <button type="button" aria-pressed={!showTradingView} onClick={() => setChartView('fills')}>Fill prices</button>
+        </div>
+        {!showTradingView && <div className="range-options" role="group" aria-label="Chart time range">
+          {RANGES.map(item => <button key={item.id} type="button" aria-pressed={item.id === range} aria-label={item.id + ' (' + item.label + ')'}
+            onClick={() => setRange(item.id)}>{item.id}</button>)}
+        </div>}
       </div>
     </div>
-    <Chart key={symbol + range} symbol={symbol} range={range} quote={quote} />
+    {showTradingView ? <TradingViewChart key={symbol} symbol={symbol} onShowFills={() => setChartView('fills')} />
+      : <Chart key={symbol + range} symbol={symbol} range={range} quote={quote} />}
     <div className="chart-footer">
       <span className="chart-source"><FeedStatus mode={mode} quote={quote} connection={connection} /></span>
       <span className="chart-clock"><Clock3 size={13} aria-hidden="true" />{quote ? time(quote.asOf) + ' UTC' : 'Awaiting update'}</span>
-      <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer" className="attribution">Powered by TradingView</a>
+      {showTradingView && <span>{mode === 'practice' ? 'Coinbase spot chart. Orders use the practice mark.' : 'Coinbase spot chart.'}</span>}
+      <a href={tradingViewUrl(symbol)} target="_blank" rel="noopener noreferrer" className="attribution">Open in TradingView <ArrowUpRight size={13} aria-hidden="true" /></a>
     </div>
   </section>;
 }

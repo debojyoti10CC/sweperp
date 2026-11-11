@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { LEVERAGES, MARKET } from '../shared/markets.js';
 import { positionTerms, QUANTITY_SCALE as SCALE } from '../shared/risk.js';
 import { AppError } from './errors.js';
@@ -55,14 +54,14 @@ export function openPosition(account, input, quotes) {
     throw new AppError(400, 'Set the stop-loss closer to entry than the liquidation price.');
   }
   const openedAt = new Date().toISOString();
-  const id = randomUUID();
+  const id = globalThis.crypto.randomUUID();
   const position = { id, symbol, side, units, leverage, entryCents, marginCents, stopCents, liquidationCents, openedAt };
   return {
     ...account,
     availableCents: account.availableCents - marginCents,
     positions: [...account.positions, position],
     events: history(account, {
-      id: randomUUID(), positionId: id, clientOrderId, type: 'opened', symbol, side,
+      id: globalThis.crypto.randomUUID(), positionId: id, clientOrderId, type: 'opened', symbol, side,
       quantity: quantity(units), price: dollars(entryCents), realizedPnl: null, time: openedAt,
     }),
   };
@@ -75,7 +74,7 @@ function settle(account, position, priceCents, type) {
     availableCents: account.availableCents + position.marginCents + result,
     positions: account.positions.filter(item => item.id !== position.id),
     events: history(account, {
-      id: randomUUID(), positionId: position.id, type, symbol: position.symbol, side: position.side,
+      id: globalThis.crypto.randomUUID(), positionId: position.id, type, symbol: position.symbol, side: position.side,
       quantity: quantity(position.units), price: dollars(priceCents), realizedPnl: dollars(result), time: new Date().toISOString(),
     }),
   };

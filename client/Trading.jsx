@@ -7,6 +7,7 @@ import { LEVERAGES, MARKET } from '../shared/markets.js';
 import { positionTerms, QUANTITY_SCALE } from '../shared/risk.js';
 import { dateTime, direction, money, number, percent, pnl, shortAddress, tone } from './format.js';
 import { Coin } from './MarketPanel.jsx';
+import { BROWSER_PRACTICE } from './terminal.js';
 
 function PanelTitle({ icon: Icon, title, children, titleId }) {
   return <div className="panel-title">
@@ -135,7 +136,8 @@ export function OrderPanel({ symbol, quote, account, ready, connection, onConnec
       {account ? <button className={'button button-primary order-action action-' + side} type="submit" disabled={busy || !quoteReady}>
         {busy ? <><span className="spinner" /> {settlement ? 'Confirming transaction…' : 'Placing order…'}</> : <>{action} <ArrowUpRight size={16} aria-hidden="true" /></>}
       </button> : <button className="button button-primary order-action" type="button" onClick={onConnect} disabled={!ready || walletBusy}>
-        <Wallet size={16} aria-hidden="true" /> {walletBusy ? 'Connecting…' : ready ? 'Connect wallet to trade' : 'Checking wallet…'}
+        <Wallet size={16} aria-hidden="true" /> {walletBusy ? 'Connecting…' : ready
+          ? (BROWSER_PRACTICE ? 'Start practice to trade' : 'Connect wallet to trade') : 'Loading account…'}
       </button>}
       <p className="order-disclaimer"><ShieldCheck size={14} aria-hidden="true" /> {settlement
         ? 'Settles on ' + settlement.label + ' with virtual funds.' : 'Orders use virtual funds.'}</p>
@@ -175,7 +177,7 @@ export function Positions({ account, onClose, wide = false }) {
       role={scrollable ? 'region' : undefined} aria-label={scrollable ? 'Open position cards' : undefined} tabIndex={scrollable ? 0 : undefined}>
       {positions.map(item => <PositionCard key={item.id} position={item} onClose={onClose} />)}
     </div> : <Empty icon={Layers3} title="No open positions">
-      {account ? 'Place an order to see it here.' : 'Connect a wallet to start trading.'}
+      {account ? 'Place an order to see it here.' : BROWSER_PRACTICE ? 'Start practice to trade.' : 'Connect a wallet to start trading.'}
     </Empty>}
   </section>;
 }

@@ -8,7 +8,7 @@ import { UPDATE_MS } from '../shared/markets.js';
 import { walletAuth } from './auth.js';
 import { accountView, closePosition, hasTriggered, openPosition, settleTriggered } from './engine.js';
 import { AppError } from './errors.js';
-import { createMarketFeed, resolveMarket, resolveRange } from './market.js';
+import { createMarketFeed, readPracticePrice, resolveMarket, resolveRange } from './market.js';
 import { openStore } from './store.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -153,11 +153,7 @@ export async function startApp({
     if (mode !== 'practice') throw new AppError(404, 'Price controls are available in practice mode.');
     await signedIn(req);
     const { symbol } = resolveMarket(req.body?.symbol);
-    const price = req.body?.price;
-    if (typeof price !== 'number' || !Number.isFinite(price) || price < 0.01 || price > 2_000_000 ||
-      Math.abs(price * 100 - Math.round(price * 100)) > 1e-6) {
-      throw new AppError(400, 'Enter a price between $0.01 and $2,000,000 with up to two decimals.');
-    }
+    const price = readPracticePrice(req.body?.price);
     await frame(async () => {
       await store.controls.updateOne({ _id: symbol }, { $set: { price } }, { upsert: true });
       market.setPrice(symbol, price);

@@ -12,6 +12,7 @@
     "devnet": "node scripts/chain.js",
     "sepolia": "node scripts/chain.js --sepolia",
     "build": "vite build",
+    "build:hosted": "vite build --mode hosted",
     "start": "node server/index.js",
     "start:live": "node server/index.js --live",
     "test": "node --test"
